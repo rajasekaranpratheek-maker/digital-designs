@@ -1,0 +1,32 @@
+module topf(
+     input clk,
+    output  hub_clk,
+    output  lat,
+    output  oe,
+    output  [2:0] rgb1,
+    output  [2:0] rgb2
+    );
+    wire pixel_up,pixel_down;
+    wire [3:0]row_addr;
+    wire [5:0]pixel_count;
+   
+  driver d(
+         .clk(clk),
+         .pixel_up(pixel_up),
+         .pixel_down(pixel_down),
+         .pixel_count(pixel_count),
+         .hub_clk(hub_clk),
+         .lat(lat),
+         .oe(oe),
+         .row_addr(row_addr),
+         .rgb1(rgb1),
+         .rgb2(rgb2)
+         );
+  text_controller t(
+         .clk(clk),
+         .pixel_x(pixel_count),
+         .pixel_yu(row_addr),
+         .pixel_up(pixel_up),
+         .pixel_down(pixel_down)
+         );
+     endmodule
