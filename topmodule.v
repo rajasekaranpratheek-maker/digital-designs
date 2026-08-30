@@ -1,83 +1,186 @@
 module hub75_top (
-    input clk,          // Global master clock
-    input rst_n,        // Active-low master reset
 
-    // Static ASCII inputs for your 8-character wide display line
-    input [7:0] ascii0, input [7:0] ascii1, input [7:0] ascii2, input [7:0] ascii3,
-    input [7:0] ascii4, input [7:0] ascii5, input [7:0] ascii6, input [7:0] ascii7,
+    input clk,
+    input rst_n,
 
-    // Physical Outbound Pins to the HUB75 Panel
-    output       HUB75_CLK,   // Gated shift register clock
-    output [3:0] HUB75_ROW,   // Row address lines (A, B, C, D)
-    output       HUB75_LAT,   // Latch/Strobe line (Active-High)
-    output       HUB75_OE,    // Output Enable / Blanking (Active-Low)
-    
-    // Pixel Color Streams (Top & Bottom halves of the display panel)
-    output       HUB75_R1, HUB75_G1, HUB75_B1, // Upper half pixel data
-    output       HUB75_R2, HUB75_G2, HUB75_B2  // Lower half pixel data
+    // 8 character ASCII inputs
+    input [7:0] ascii0,
+    input [7:0] ascii1,
+    input [7:0] ascii2,
+    input [7:0] ascii3,
+    input [7:0] ascii4,
+    input [7:0] ascii5,
+    input [7:0] ascii6,
+    input [7:0] ascii7,
+
+    // HUB75 outputs
+    output HUB75_CLK,
+    output [3:0] HUB75_ROW,
+    output HUB75_LAT,
+    output HUB75_OE,
+
+    output HUB75_R1,
+    output HUB75_G1,
+    output HUB75_B1,
+
+    output HUB75_R2,
+    output HUB75_G2,
+    output HUB75_B2
+
 );
 
-    // Internal interconnect wires between controllers
+
+    // =========================================================
+    // Driver signals
+    // =========================================================
+
     wire [5:0] w_pixel_x;
     wire [3:0] w_row_addr;
-    wire       w_shift_en;
-    wire       w_latch_en;
-    wire       w_display_en;
-    wire       w_pixel_up;
-    wire       w_pixel_down;
 
-    // -------------------------------------------------------------------------
-    // 1. HUB75 Scan Timing Engine
-    // -------------------------------------------------------------------------
+    wire w_shift_en;
+    wire w_latch_en;
+    wire w_display_en;
+
+
+    // =========================================================
+    // Text controller signals
+    // =========================================================
+
+    wire w_pixel_up;
+    wire w_pixel_down;
+
+    reg [7:0] w_ascii_in;
+    reg [2:0] w_char_sel;
+    reg w_load;
+
+
+    // =========================================================
+    // Character loading counter
+    // =========================================================
+
+    reg [3:0] load_count;
+
+
+    always @(posedge clk or negedge rst_n) begin
+
+        if(!rst_n) begin
+
+            load_count <= 4'd0;
+
+        end
+
+        else begin
+
+            if(load_count == 4'd7)
+                load_count <= 4'd0;
+            else
+                load_count <= load_count + 1'b1;
+
+        end
+
+    end
+
+
+    // =========================================================
+    // Select which ASCII character to load
+    // =========================================================
+
+    always @(*) begin
+
+        w_load = 1'b1;
+
+        case(load_count)
+
+            4'd0: w_ascii_in = ascii0;
+            4'd1: w_ascii_in = ascii1;
+            4'd2: w_ascii_in = ascii2;
+            4'd3: w_ascii_in = ascii3;
+            4'd4: w_ascii_in = ascii4;
+            4'd5: w_ascii_in = ascii5;
+            4'd6: w_ascii_in = ascii6;
+            4'd7: w_ascii_in = ascii7;
+
+            default: w_ascii_in = 8'd32;
+
+        endcase
+
+
+        if(load_count <= 4'd7)
+            w_char_sel = load_count[2:0];
+        else
+            w_char_sel = 3'd0;
+
+    end
+
+
+    // =========================================================
+    // HUB75 scan timing engine
+    // =========================================================
+
     driver u_scan_ctrl (
-        .clk           (clk),
-        .rst_n         (rst_n),
-        .pixel_count   (w_pixel_x),
-        .row_addr      (w_row_addr),
-        .shift_en      (w_shift_en),
-        .latch_en      (w_latch_en),
-        .display_en    (w_display_en)
+
+        .clk         (clk),
+        .rst_n       (rst_n),
+
+        .pixel_count (w_pixel_x),
+        .row_addr    (w_row_addr),
+
+        .shift_en    (w_shift_en),
+        .latch_en    (w_latch_en),
+        .display_en  (w_display_en)
+
     );
 
-    // -------------------------------------------------------------------------
-    // 2. Text Pixel Generator Engine
-    // -------------------------------------------------------------------------
-    // The scan_controller outputs row_addr (0 to 15) representing the active row.
-    // We pass this directly to pixel_yu[3:0] so the text renders line-by-line.
-    text_controller u_text_ctrl (
-        .clk        (clk),
-        .pixel_x    (w_pixel_x),
-        .pixel_yu   ({1'b0, w_row_addr}), // Padded to match your 5-bit input layout
-        .ascii0     (ascii0), .ascii1 (ascii1), .ascii2 (ascii2), .ascii3 (ascii3),
-        .ascii4     (ascii4), .ascii5 (ascii5), .ascii6 (ascii6), .ascii7 (ascii7),
-        .pixel_up   (w_pixel_up),
-        .pixel_down (w_pixel_down)
+
+    // =========================================================
+    // Text pixel generator
+    // =========================================================
+
+    text_controller tc (
+
+        .clk       (clk),
+        .rst_n     (rst_n),
+
+        .ascii_in  (w_ascii_in),
+        .char_sel  (w_char_sel),
+        .load      (w_load),
+
+        .pixel_x   (w_pixel_x),
+
+        .pixel_y   ({1'b0, w_row_addr}),
+
+        .pixel_up  (w_pixel_up),
+        .pixel_down(w_pixel_down),
+
+        .ascii_out ()
+
     );
 
-    // -------------------------------------------------------------------------
-    // 3. Hardware Signal Routing & Phase Adjustments
-    // -------------------------------------------------------------------------
-    
-    // Clock Gating: Only toggle the panel's clock during the actual SHIFT phase.
-    // This stops junk/clashing bits from corrupting the panel shift registers.
+
+    // =========================================================
+    // HUB75 connections
+    // =========================================================
+
     assign HUB75_CLK = clk & w_shift_en;
 
-    // Route row addresses directly to physical pins
     assign HUB75_ROW = w_row_addr;
 
-    // Standard HUB75 Latch is active-high
     assign HUB75_LAT = w_latch_en;
 
-    // Standard HUB75 Output Enable is active-low (0 = LEDs On, 1 = LEDs Blanked)
-    assign HUB75_OE  = ~w_display_en;
+    assign HUB75_OE = ~w_display_en;
 
-    // Map monochome text streams to Color Outputs (makes text display solid White)
-    assign HUB75_R1  = w_pixel_up;
-    assign HUB75_G1  = w_pixel_up;
-    assign HUB75_B1  = w_pixel_up;
 
-    assign HUB75_R2  = w_pixel_down;
-    assign HUB75_G2  = w_pixel_down;
-    assign HUB75_B2  = w_pixel_down;
+    // =========================================================
+    // Monochrome → RGB
+    // =========================================================
+
+    assign HUB75_R1 = w_pixel_up;
+    assign HUB75_G1 = w_pixel_up;
+    assign HUB75_B1 = w_pixel_up;
+
+    assign HUB75_R2 = w_pixel_down;
+    assign HUB75_G2 = w_pixel_down;
+    assign HUB75_B2 = w_pixel_down;
+
 
 endmodule

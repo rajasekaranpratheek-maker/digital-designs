@@ -3,24 +3,18 @@ module text_controller(
     input wire clk,
     input wire rst_n,
 
-    // ASCII data from Tiny Tapeout input pins
     input wire [7:0] ascii_in,
 
-    // Character register select
     input wire [2:0] char_sel,
 
-    // Load pulse
     input wire load,
 
-    // Position from driver
     input wire [5:0] pixel_x,
     input wire [4:0] pixel_y,
 
-    // Pixel outputs to driver
     output reg pixel_up,
     output reg pixel_down,
 
-    // ASCII character currently being displayed
     output reg [7:0] ascii_out
 
 );
@@ -97,15 +91,20 @@ module text_controller(
 
 
     // =========================================================
-    // Font ROM instantiation
+    // Font ROM
     // =========================================================
 
     wire [7:0] bitmap;
+    wire [2:0] local_y;
 
-    fontrom u_fontrom (
+    assign local_y = pixel_y[2:0];
+
+    font_rom fr (
+
         .ascii_code(ascii_out),
-        .row(pixel_y[2:0]),
+        .row(local_y),
         .row_data(bitmap)
+
     );
 
 
