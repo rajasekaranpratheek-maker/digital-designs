@@ -1,54 +1,57 @@
 module text_controller(
     input clk,
+
     input [5:0] pixel_x,
-    input [3:0] pixel_yu,
-    output pixel_up,
-    output pixel_down
-);
-wire [3:0]pixel_yl;
-wire [5:0] char_x;
-wire [3:0] char_yu;
-wire [3:0] char_yl;
-wire [5:0] char_xl;
-wire [8:0] text_addr_u;
-wire [8:0] text_addr_l;
-wire [7:0] ascii_u;
-wire [7:0] ascii_l;
-wire [2:0] local_yu;
-wire [2:0] local_yl;
-wire [2:0] local_x;
-wire [7:0] bitmap_u;
-wire [7:0] bitmap_l;
+    input [4:0] pixel_yu,
 
-assign pixel_yl = pixel_yu + 5'b1000;
-assign char_x = pixel_x >> 3;
-assign char_yu = pixel_yu >> 3;
-assign char_yl = pixel_yl >> 3;
-assign text_addr_u = char_yu * 8 + char_x;
-assign text_addr_l = char_yl * 8 + char_x;
+    input [7:0] ascii0,
+    input [7:0] ascii1,
+    input [7:0] ascii2,
+    input [7:0] ascii3,
+    input [7:0] ascii4,
+    input [7:0] ascii5,
+    input [7:0] ascii6,
+    input [7:0] ascii7,
 
-text_ram tr(
-    .clk(clk),
-    .addr_u(text_addr_u),
-    .addr_l(text_addr_l),
-    .data_u(ascii_u),
-    .data_l(ascii_l)
+    output reg pixel_up,
+    output reg pixel_down
 );
 
-assign local_yu = pixel_yu[2:0];
-assign local_yl = pixel_yl[2:0];
-assign local_x = pixel_x[2:0];
+    reg [7:0] selected_ascii;
+    wire [7:0] rom_bitmap;
 
+    // ------------------------------------------------
+    // Select character according to horizontal pixel
+    // ------------------------------------------------
+    always @(*) begin
+        case(pixel_x[5:3])
+            3'd0: selected_ascii = ascii0;
+            3'd1: selected_ascii = ascii1;
+            3'd2: selected_ascii = ascii2;
+            3'd3: selected_ascii = ascii3;
+            3'd4: selected_ascii = ascii4;
+            3'd5: selected_ascii = ascii5;
+            3'd6: selected_ascii = ascii6;
+            3'd7: selected_ascii = ascii7;
+            default: selected_ascii = 8'd32; // Space character fallback
+        endcase
+    end
 
-font_rom fr(
-    .ascii_u(ascii_u),
-    .ascii_l(ascii_l),
-    .row_u(local_yu),
-    .row_l(local_yl),
-    .bitmap_u(bitmap_u),
-    .bitmap_l(bitmap_l)
-);
+    // ------------------------------------------------
+    // Instantiate Font ROM Component
+    // ------------------------------------------------
+    font_rom my_font_rom (
+        .ascii_code (selected_ascii),
+        .row_addr   (pixel_yu[2:0]),
+        .bitmap     (rom_bitmap)
+    );
 
-assign pixel_up = bitmap_u[7-local_x];
-assign pixel_down=bitmap_l[7-local_x];
+    // ------------------------------------------------
+    // Select individual bit from the ROM slice stream
+    // ------------------------------------------------
+    always @(*) begin
+        pixel_up   = rom_bitmap[3'd7 - pixel_x[2:0]];
+        pixel_down = pixel_up;
+    end
+
 endmodule
