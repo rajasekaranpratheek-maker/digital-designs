@@ -1,69 +1,88 @@
 module driver(
-    input clk,pixel_up,pixel_down,
-    output reg [5:0]pixel_count=0,
-    output reg hub_clk=0,
-    output reg lat=0,
-    output reg oe=1,
-    output reg [3:0] row_addr=0,
-    output reg [2:0] rgb1=0,
-    output reg [2:0] rgb2=0
+    input clk,
+    input rst_n, // Renamed to rst_n to standardise active-low naming
+
+    output reg [5:0] pixel_count,
+    output reg [3:0] row_addr,
+
+    output reg shift_en,
+    output reg latch_en,
+    output reg display_en
 );
-parameter SHIFT=2'd0;//FSM states defn
-parameter LATCH=2'd1;
-parameter DISPLAY=2'd2;
-parameter NEXTROW=2'd3;
-reg [1:0] state=SHIFT;//Internal reg to count 4 states with initial state SHIFT
-reg [7:0] display_count=0;//Internal reg to regulate display time of any two rows
-always @(posedge clk)
-begin
-    case(state)
-    SHIFT:
-    begin
-        oe<=1;
-        lat<=0;           
-        hub_clk <= ~hub_clk;//clockdivider by 2 for shifting pixels 
-        if(hub_clk==0)
-        begin
-           rgb1<=(pixel_up)? 3'b111 : 3'b000;
-           rgb2<=(pixel_down)? 3'b111:3'b000;
-            if(pixel_count==63)
-            begin
-                pixel_count<=0;
-                hub_clk<=0;
-                state<=LATCH;
+
+    reg [6:0] display_count;
+
+    // Fixed-width binary states
+    localparam SHIFT   = 2'd0;
+    localparam LATCH   = 2'd1;
+    localparam DISPLAY = 2'd2;
+
+    reg [1:0] state;
+
+    always @(posedge clk or negedge rst_n) begin
+        if(!rst_n) begin
+            state         <= SHIFT;
+            pixel_count   <= 6'd0;
+            row_addr      <= 4'd0;
+            display_count <= 7'd0;
+        end
+        else begin
+            case(state)
+                SHIFT: begin
+                    // Count up to 63 to clock exactly 64 pixels
+                    if(pixel_count == 6'd63) begin
+                        pixel_count <= 6'd0;
+                        state       <= LATCH; 
+                    end
+                    else begin
+                        pixel_count <= pixel_count + 1'b1;
+                    end
+                end
+
+                LATCH: begin
+                    // Holds latch_en high for exactly 1 clock cycle
+                    state         <= DISPLAY;
+                    display_count <= 7'd0;
+                end
+
+                DISPLAY: begin
+                    if(display_count == 7'd100) begin
+                        display_count <= 7'd0;
+                        // Safely increment row address while display is blanked next cycle
+                        if(row_addr == 4'd15)
+                            row_addr <= 4'd0;
+                        else
+                            row_addr <= row_addr + 1'b1;
+                        
+                        state <= SHIFT;
+                    end
+                    else begin
+                        display_count <= display_count + 1'b1;
+                    end
+                end
+                
+                default: state <= SHIFT;
+            endcase
+        end
+    end
+
+    // Combinational Output Assignments
+    always @(*) begin
+        shift_en   = 1'b0;
+        latch_en   = 1'b0;
+        display_en = 1'b0;
+
+        case(state)
+            SHIFT: begin
+                shift_en   = 1'b1;
             end
-            else
-            begin
-                pixel_count<=pixel_count+1;
+            LATCH: begin
+                latch_en   = 1'b1; // Pulled high for 1 cycle after shifting ends
             end
-        end
+            DISPLAY: begin
+                display_en = 1'b1; // Turn on display only during this window
+            end
+        endcase
     end
-    LATCH:
-    begin
-        lat<=1;
-        oe<=1;
-        state<=DISPLAY;
-    end
-    DISPLAY:
-    begin
-        lat<=0;
-        oe<=0;//output is enabled since it is active low here
-        if(display_count==100)
-        begin
-            display_count<=0;
-            state<=NEXTROW;
-        end
-        else
-        begin
-            display_count<=display_count+1;
-        end
-    end
-    NEXTROW:
-    begin
-        oe<=1;
-        row_addr<=row_addr+1;
-        state<=SHIFT;
-    end
-    endcase
-end
+
 endmodule
